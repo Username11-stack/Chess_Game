@@ -1,0 +1,20 @@
+Game_No,FEN,Eval_cp,Eval_mate,stat_win,stat_draw,stat_loss,white_won,black_won,stalemate,move_no
+1,rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,49,,91,904,5,0,0,0,0
+1,rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 0 1,-34,,6,923,71,0,0,0,1
+1,rnbqkbnr/ppp1pppp/3p4/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1,63,,141,856,3,0,0,0,2
+1,rnbqkbnr/ppp1pppp/3p4/8/3N4/8/PPPPPPPP/RNBQKB1R b Qkq - 0 1,80,,335,664,1,0,0,0,3
+1,rnbqkbnr/ppp1ppp1/3p4/7p/3N4/8/PPPPPPPP/RNBQKB1R w Q - 0 1,9,,32,954,14,0,0,0,4
+1,rnbqkbnr/ppp1ppp1/3p4/7p/3N4/6P1/PPPPPP1P/RNBQKB1R b Q - 0 1,77,,260,739,1,0,0,0,5
+1,rnbqkbnr/pp2ppp1/2pp4/7p/3N4/6P1/PPPPPP1P/RNBQKB1R w Q - 0 1,2,,31,955,14,0,0,0,6
+1,rnbqkbnr/pp2ppp1/2pp4/1N5p/8/6P1/PPPPPP1P/RNBQKB1R b Q - 0 1,421,,1000,0,0,0,0,0,7
+1,rnbqkbnr/1p2ppp1/2pp4/pN5p/8/6P1/PPPPPP1P/RNBQKB1R w Q - 0 1,-101,,0,446,554,0,0,0,8
+1,rnbqkbnr/1p2ppp1/2pp4/pN5p/5P2/6P1/PPPPP2P/RNBQKB1R b Q - 0 1,430,,1000,0,0,0,0,0,9
+1,rnbqkbnr/1p2ppp1/3p4/pp5p/5P2/6P1/PPPPP2P/RNBQKB1R w Q - 0 1,-420,,0,0,1000,0,0,0,10
+1,rnbqkbnr/1p2ppp1/3p4/pp5p/5P2/2N3P1/PPPPP2P/R1BQKB1R b - - 0 1,402,,1000,0,0,0,0,0,11
+1,rnbqkbnr/1p2ppp1/3p4/p6p/1p3P2/2N3P1/PPPPP2P/R1BQKB1R w - - 0 1,-441,,0,0,1000,0,0,0,12
+1,rnbqkbnr/1p2ppp1/3p4/p2N3p/1p3P2/6P1/PPPPP2P/R1BQKB1R b - - 0 1,528,,1000,0,0,0,0,0,13
+1,rnbqkbnr/1p3pp1/3pp3/p2N3p/1p3P2/6P1/PPPPP2P/R1BQKB1R w - - 0 1,-517,,0,0,1000,0,0,0,14
+1,rnbqkbnr/1p3pp1/3pp3/p6p/Pp3P2/6P1/1PPPP2P/R1BQKB1R b - a3 0 1,701,,1000,0,0,0,0,0,15
+1,rn1qkbnr/1p1b1pp1/3pp3/p6p/Pp3P2/6P1/1PPPP2P/R1BQKB1R w - a3 0 1,-690,,0,0,1000,0,0,0,16
+1,rn1qkbnr/1p1b1pp1/3pp3/p6p/Pp3P2/8/1PPPP2P/R1BQKB1R b - a3 0 1,,1,1000,0,0,0,0,0,17
+1,rn2kbnr/1p1b1pp1/3pp3/p6p/Pp3P1q/8/1PPPP2P/R1BQKB1R w - a3 0 1,,0,,,,0,1,0,18
