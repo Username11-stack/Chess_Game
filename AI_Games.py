@@ -64,9 +64,16 @@ class ChessVGG(nn.Module):
             nn.GELU(),
         )
 
+        self.material_head = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.GELU(),
+            nn.Linear(32, 32),
+            nn.GELU(),
+        )
+
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(256 * 2 * 2, 1024),
+            nn.Linear(256 * 2 * 2 + 32, 1024),
             nn.LayerNorm(1024),
             nn.GELU(),
             nn.Dropout(dropout_rate),
@@ -77,12 +84,30 @@ class ChessVGG(nn.Module):
             nn.Linear(512, 1)
         )
 
-    def forward(self, x):
+    def forward(self, x, material):
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)
-        x = self.classifier(x)
-        return x.squeeze()
+        x_flat = torch.flatten(x, start_dim=1)
+        m = self.material_head(material)
+        fused = torch.cat([x_flat, m], dim=1)
+        return self.classifier(fused).squeeze()
+
+
+def points_of_material(fen):
+    white_material = 0
+    black_material = 0
+    point_to_piece = {
+        'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 11,
+        'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 11
+    }
+    board_part = fen.split(' ')[0]
+    for char in board_part:
+        if char in ['p', 'r', 'n', 'b', 'q', 'k']:
+            black_material += point_to_piece[char]
+        elif char in ['P', 'R', 'N', 'B', 'Q', 'K']:
+            white_material += point_to_piece[char]
+    return white_material, black_material
 
 
 def fen_to_tensor(fen):
@@ -299,11 +324,12 @@ def train_on_game_outcome(outcome):
         
         # Stack tensors into batch
         batch_tensors = torch.stack([item[1] for item in batch]).to(device)
+        batch_materials = torch.stack([item[2] for item in batch]).to(device)
         targets = torch.full((len(batch),), target_value, dtype=torch.float32).to(device)
         
         # Forward pass
         optimizer.zero_grad()
-        predictions = model(batch_tensors)
+        predictions = model(batch_tensors, batch_materials)
         
         # Compute loss and backpropagate
         loss = criterion(predictions, targets)
@@ -337,6 +363,7 @@ def move_vgg_model(board_state):
     best_eval = float('-inf')
     best_fen = None
     best_tensor = None
+    best_material = None
     
     # Save current game state
     saved_board = [row[:] for row in gs.board]
@@ -357,9 +384,11 @@ def move_vgg_model(board_state):
             # Get FEN and evaluate
             fen = gs.generateFen(gs.board)
             tensor = fen_to_tensor(fen)
+            wm, bm = points_of_material(fen)
+            material_tensor = torch.tensor([wm / 50.0, bm / 50.0], dtype=torch.float32)
             
             with torch.no_grad():
-                evaluation = model(tensor.unsqueeze(0).to(device)).item()
+                evaluation = model(tensor.unsqueeze(0).to(device), material_tensor.unsqueeze(0).to(device)).item()
             
             # White wants highest evaluation
             if evaluation > best_eval:
@@ -367,6 +396,7 @@ def move_vgg_model(board_state):
                 best_move = move[1]  # [(start_row, start_col), (end_row, end_col)]
                 best_fen = fen
                 best_tensor = tensor
+                best_material = material_tensor
         except Exception as e:
             # Skip invalid moves
             print(f"Warning: Skipping invalid move: {e}")
@@ -378,7 +408,7 @@ def move_vgg_model(board_state):
     
     # Store the chosen position in experience buffer for learning
     if best_fen and best_tensor is not None:
-        experience_buffer.append((best_fen, best_tensor))
+        experience_buffer.append((best_fen, best_tensor, best_material))
     
     print(f"Model evaluation: {best_eval:.2f}")
     return best_move

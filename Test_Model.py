@@ -156,24 +156,15 @@ def fen_to_tensor(fen):
         x = self.classifier(x)
         return x.squeeze()'''
 
-# Improved VGG-style model with batch norm, GELU, pooling, and material inputs
+# Scaled-up VGG-style model with residual connections for complex pattern learning
+# Parameters: ~17M (up from ~2.76M)
 class ChessVGG(nn.Module):
     def __init__(self, dropout_rate=0.35):
         super(ChessVGG, self).__init__()
 
-        # VGG-style convolutional blocks with batch normalization and max pooling
+        # Block 1: 8x8 -> 4x4   (12 -> 128)
         self.block1 = nn.Sequential(
-            nn.Conv2d(12, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-
-        self.block2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.Conv2d(12, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.GELU(),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
@@ -182,27 +173,60 @@ class ChessVGG(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
-        self.block3 = nn.Sequential(
+        # Block 2: 4x4 -> 2x2   (128 -> 256, 3 convs for deeper feature extraction)
+        self.block2 = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
-        # Small MLP to process [white_material, black_material]
+        # Block 3: 2x2, residual (256 -> 512)
+        # Main path: 256 -> 512 -> 512
+        self.block3_main = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+        )
+        # Skip projection: 256 -> 512 via 1x1 conv
+        self.block3_skip = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=1),
+            nn.BatchNorm2d(512),
+        )
+
+        # Block 4: 2x2, residual (512 -> 512, identity skip)
+        self.block4 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+        )
+
+        # Expanded material MLP: [white_material, black_material] -> 64
         self.material_head = nn.Sequential(
-            nn.Linear(2, 32),
+            nn.Linear(2, 64),
             nn.GELU(),
-            nn.Linear(32, 32),
+            nn.Linear(64, 64),
             nn.GELU(),
         )
 
-        # Fused classifier: CNN features (1024) + material features (32)
+        # Fused classifier: CNN features (512*2*2=2048) + material (64) = 2112
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(256 * 2 * 2 + 32, 1024),
+            nn.Linear(512 * 2 * 2 + 64, 2048),
+            nn.LayerNorm(2048),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(2048, 1024),
             nn.LayerNorm(1024),
             nn.GELU(),
             nn.Dropout(dropout_rate),
@@ -216,10 +240,13 @@ class ChessVGG(nn.Module):
     def forward(self, x, material):
         x = self.block1(x)
         x = self.block2(x)
-        x = self.block3(x)
-        x_flat = torch.flatten(x, start_dim=1)       # (B, 256*2*2)
-        m = self.material_head(material)              # (B, 32)
-        fused = torch.cat([x_flat, m], dim=1)         # (B, 1024+32)
+        # Block 3 residual
+        x = F.gelu(self.block3_main(x) + self.block3_skip(x))
+        # Block 4 residual (identity skip — same channels)
+        x = F.gelu(self.block4(x) + x)
+        x_flat = torch.flatten(x, start_dim=1)        # (B, 512*2*2)
+        m = self.material_head(material)               # (B, 64)
+        fused = torch.cat([x_flat, m], dim=1)          # (B, 2112)
         return self.classifier(fused).squeeze()
 
 # Train-test split
@@ -364,7 +391,7 @@ for epoch in range(num_epochs):
         patience_counter = 0
         # Save best model
         import os
-        model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_best_model.pth')
+        model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_best_model_Test.pth')
         torch.save({
             'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
@@ -382,7 +409,7 @@ for epoch in range(num_epochs):
 
 # Save final model
 import os
-model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_model_final.pth')
+model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_model_final_Test.pth')
 torch.save({
     'epoch': epoch + 1,
     'model_state_dict': model.state_dict(),
@@ -482,7 +509,7 @@ chess_df_with_predictions['Predicted_Eval_cp'] = predictions
 print(f"Predictions completed for all {len(chess_df)} positions!")
 
 # Save the dataframe with predictions
-output_file = 'chess_predictions_improved.csv'
+output_file = 'chess_predictions_improved_Test.csv'
 chess_df_with_predictions.to_csv(output_file, index=False)
 print(f"Dataframe with predictions saved to '{output_file}'")
 
