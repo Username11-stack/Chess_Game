@@ -75,18 +75,28 @@ chess_df[['white_material', 'black_material']] = chess_df['FEN'].apply(points_of
 # FEN to tensor conversion
 def fen_to_tensor(fen):
     """
-    Convert FEN string to 12x8x8 tensor (12 piece types x 8x8 board)
-    Piece mapping: P=0, N=1, B=2, R=3, Q=4, K=5 (white)
-                   p=6, n=7, b=8, r=9, q=10, k=11 (black)
+    Convert FEN string to 18x8x8 tensor:
+      Planes  0-11: piece positions (P,N,B,R,Q,K white; p,n,b,r,q,k black)
+      Plane  12: side to move (all 1s = white to move, all 0s = black)
+      Plane  13: white kingside castling right
+      Plane  14: white queenside castling right
+      Plane  15: black kingside castling right
+      Plane  16: black queenside castling right
+      Plane  17: en passant target square
     """
     piece_to_idx = {
         'P': 0, 'N': 1, 'B': 2, 'R': 3, 'Q': 4, 'K': 5,
         'p': 6, 'n': 7, 'b': 8, 'r': 9, 'q': 10, 'k': 11
     }
-    
-    board_part = fen.split(' ')[0]  # Get board position part
-    tensor = np.zeros((12, 8, 8), dtype=np.float32)
-    
+
+    parts = fen.split(' ')
+    board_part = parts[0]
+    side_to_move = parts[1] if len(parts) > 1 else 'w'
+    castling    = parts[2] if len(parts) > 2 else '-'
+    en_passant  = parts[3] if len(parts) > 3 else '-'
+
+    tensor = np.zeros((18, 8, 8), dtype=np.float32)
+
     row = 0
     col = 0
     for char in board_part:
@@ -99,7 +109,28 @@ def fen_to_tensor(fen):
             if char in piece_to_idx:
                 tensor[piece_to_idx[char], row, col] = 1.0
             col += 1
-    
+
+    # Plane 12: side to move
+    if side_to_move == 'w':
+        tensor[12, :, :] = 1.0
+
+    # Planes 13-16: castling rights
+    if 'K' in castling:
+        tensor[13, :, :] = 1.0
+    if 'Q' in castling:
+        tensor[14, :, :] = 1.0
+    if 'k' in castling:
+        tensor[15, :, :] = 1.0
+    if 'q' in castling:
+        tensor[16, :, :] = 1.0
+
+    # Plane 17: en passant target square (single cell)
+    if en_passant != '-' and len(en_passant) == 2:
+        ep_col = ord(en_passant[0]) - ord('a')
+        ep_row = 8 - int(en_passant[1])
+        if 0 <= ep_row < 8 and 0 <= ep_col < 8:
+            tensor[17, ep_row, ep_col] = 1.0
+
     return torch.from_numpy(tensor)
 
 # VGG-style model for chess evaluation
@@ -162,9 +193,9 @@ class ChessVGG(nn.Module):
     def __init__(self, dropout_rate=0.35):
         super(ChessVGG, self).__init__()
 
-        # Block 1: 8x8 -> 4x4   (12 -> 128)
+        # Block 1: 8x8 -> 4x4   (18 -> 128, 18 input planes from expanded FEN encoding)
         self.block1 = nn.Sequential(
-            nn.Conv2d(12, 128, kernel_size=3, padding=1),
+            nn.Conv2d(18, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.GELU(),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
@@ -173,7 +204,7 @@ class ChessVGG(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
-        # Block 2: 4x4 -> 2x2   (128 -> 256, 3 convs for deeper feature extraction)
+        # Block 2: stays at 4x4 (MaxPool removed so blocks 3 & 4 work on meaningful spatial extent)
         self.block2 = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
@@ -184,7 +215,6 @@ class ChessVGG(nn.Module):
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         # Block 3: 2x2, residual (256 -> 512)
@@ -210,6 +240,9 @@ class ChessVGG(nn.Module):
             nn.Conv2d(512, 512, kernel_size=3, padding=1),
             nn.BatchNorm2d(512),
         )
+
+        # Adaptive pool: collapse 4x4 -> 2x2 before classifier (keeps param count stable)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((2, 2))
 
         # Expanded material MLP: [white_material, black_material] -> 64
         self.material_head = nn.Sequential(
@@ -244,6 +277,7 @@ class ChessVGG(nn.Module):
         x = F.gelu(self.block3_main(x) + self.block3_skip(x))
         # Block 4 residual (identity skip — same channels)
         x = F.gelu(self.block4(x) + x)
+        x = self.adaptive_pool(x)                     # (B, 512, 2, 2)
         x_flat = torch.flatten(x, start_dim=1)        # (B, 512*2*2)
         m = self.material_head(material)               # (B, 64)
         fused = torch.cat([x_flat, m], dim=1)          # (B, 2112)
@@ -295,7 +329,7 @@ print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # Loss and optimizer with weight decay (L2 regularization)
 criterion = nn.MSELoss()
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
 
 # Learning rate scheduler - reduce LR when validation loss plateaus
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -458,8 +492,8 @@ axes[2].legend(fontsize=11)
 axes[2].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('training_metrics.png', dpi=300)
-print("Training metrics plot saved as 'training_metrics.png'")
+plt.savefig('training_metrics_Test.png', dpi=300)
+print("Training metrics plot saved as 'training_metrics_Test.png'")
 plt.show()
 
 # Test predictions with denormalization
