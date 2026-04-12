@@ -40,18 +40,9 @@ class ChessVGG(nn.Module):
     def __init__(self, dropout_rate=0.35):
         super(ChessVGG, self).__init__()
 
+        # Block 1: 8x8 -> 4x4  (18 input planes: pieces + side-to-move + castling + en passant)
         self.block1 = nn.Sequential(
-            nn.Conv2d(18, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-
-        self.block2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.Conv2d(18, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.GELU(),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
@@ -60,8 +51,12 @@ class ChessVGG(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
-        self.block3 = nn.Sequential(
+        # Block 2: stays at 4x4
+        self.block2 = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
@@ -69,16 +64,44 @@ class ChessVGG(nn.Module):
             nn.GELU(),
         )
 
-        self.material_head = nn.Sequential(
-            nn.Linear(2, 32),
+        # Block 3: residual 256 -> 512
+        self.block3_main = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
             nn.GELU(),
-            nn.Linear(32, 32),
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+        )
+        self.block3_skip = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=1),
+            nn.BatchNorm2d(512),
+        )
+
+        # Block 4: residual 512 -> 512 (identity skip)
+        self.block4 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+        )
+
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((2, 2))
+
+        self.material_head = nn.Sequential(
+            nn.Linear(2, 64),
+            nn.GELU(),
+            nn.Linear(64, 64),
             nn.GELU(),
         )
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(256 * 2 * 2 + 32, 1024),
+            nn.Linear(512 * 2 * 2 + 64, 2048),
+            nn.LayerNorm(2048),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(2048, 1024),
             nn.LayerNorm(1024),
             nn.GELU(),
             nn.Dropout(dropout_rate),
@@ -92,7 +115,9 @@ class ChessVGG(nn.Module):
     def forward(self, x, material):
         x = self.block1(x)
         x = self.block2(x)
-        x = self.block3(x)
+        x = torch.nn.functional.gelu(self.block3_main(x) + self.block3_skip(x))
+        x = torch.nn.functional.gelu(self.block4(x) + x)
+        x = self.adaptive_pool(x)
         x_flat = torch.flatten(x, start_dim=1)
         m = self.material_head(material)
         fused = torch.cat([x_flat, m], dim=1)
@@ -143,11 +168,8 @@ def fen_to_tensor(fen):
                 tensor[piece_to_idx[char], row, col] = 1.0
             col += 1
 
-    # Channel 12: side to move (white=1, black=0)
     if side_to_move == 'w':
         tensor[12, :, :] = 1.0
-    
-    # Channels 13-16: castling rights
     if 'K' in castling:
         tensor[13, :, :] = 1.0
     if 'Q' in castling:
@@ -156,8 +178,6 @@ def fen_to_tensor(fen):
         tensor[15, :, :] = 1.0
     if 'q' in castling:
         tensor[16, :, :] = 1.0
-    
-    # Channel 17: en passant  
     if en_passant != '-' and len(en_passant) == 2:
         ep_col = ord(en_passant[0]) - ord('a')
         ep_row = 8 - int(en_passant[1])
@@ -192,13 +212,13 @@ try:
     if _model_path is None:
         raise FileNotFoundError
     checkpoint = torch.load(_model_path, map_location=device, weights_only=False)
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    model.load_state_dict(checkpoint['model_state_dict'])
     # Load optimizer state if available
     if 'optimizer_state_dict' in checkpoint:
         try:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        except:
-            print("Warning: Could not load optimizer state (likely due to architecture mismatch)")
+        except ValueError:
+            print("Warning: Could not load optimizer state for current model configuration.")
     model.train()  # Set to training mode for real-time learning
     print(f"Chess VGG model loaded successfully on {device}!")
     print("Real-time learning ENABLED - model will learn from each game")
