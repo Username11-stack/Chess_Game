@@ -41,7 +41,7 @@ class ChessVGG(nn.Module):
         super(ChessVGG, self).__init__()
 
         self.block1 = nn.Sequential(
-            nn.Conv2d(12, 64, kernel_size=3, padding=1),
+            nn.Conv2d(18, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.GELU(),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
@@ -116,15 +116,20 @@ def points_of_material(fen):
 
 
 def fen_to_tensor(fen):
-    """Convert FEN string to 12x8x8 tensor"""
+    """Convert FEN string to 18x8x8 tensor (pieces + side-to-move + castling + en passant)"""
     piece_to_idx = {
         'P': 0, 'N': 1, 'B': 2, 'R': 3, 'Q': 4, 'K': 5,
         'p': 6, 'n': 7, 'b': 8, 'r': 9, 'q': 10, 'k': 11
     }
-    
-    board_part = fen.split(' ')[0]
-    tensor = np.zeros((12, 8, 8), dtype=np.float32)
-    
+
+    parts = fen.split(' ')
+    board_part = parts[0]
+    side_to_move = parts[1] if len(parts) > 1 else 'w'
+    castling = parts[2] if len(parts) > 2 else '-'
+    en_passant = parts[3] if len(parts) > 3 else '-'
+
+    tensor = np.zeros((18, 8, 8), dtype=np.float32)
+
     row = 0
     col = 0
     for char in board_part:
@@ -137,7 +142,28 @@ def fen_to_tensor(fen):
             if char in piece_to_idx:
                 tensor[piece_to_idx[char], row, col] = 1.0
             col += 1
+
+    # Channel 12: side to move (white=1, black=0)
+    if side_to_move == 'w':
+        tensor[12, :, :] = 1.0
     
+    # Channels 13-16: castling rights
+    if 'K' in castling:
+        tensor[13, :, :] = 1.0
+    if 'Q' in castling:
+        tensor[14, :, :] = 1.0
+    if 'k' in castling:
+        tensor[15, :, :] = 1.0
+    if 'q' in castling:
+        tensor[16, :, :] = 1.0
+    
+    # Channel 17: en passant  
+    if en_passant != '-' and len(en_passant) == 2:
+        ep_col = ord(en_passant[0]) - ord('a')
+        ep_row = 8 - int(en_passant[1])
+        if 0 <= ep_row < 8 and 0 <= ep_col < 8:
+            tensor[17, ep_row, ep_col] = 1.0
+
     return torch.from_numpy(tensor)
 
 
@@ -166,10 +192,13 @@ try:
     if _model_path is None:
         raise FileNotFoundError
     checkpoint = torch.load(_model_path, map_location=device, weights_only=False)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     # Load optimizer state if available
     if 'optimizer_state_dict' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        except:
+            print("Warning: Could not load optimizer state (likely due to architecture mismatch)")
     model.train()  # Set to training mode for real-time learning
     print(f"Chess VGG model loaded successfully on {device}!")
     print("Real-time learning ENABLED - model will learn from each game")
