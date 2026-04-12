@@ -1,8 +1,13 @@
+
 import time
 import importlib.util
 import subprocess
 import sys
 import os
+import shutil
+
+if os.getenv("HEADLESS", "0") == "1" or os.getenv("GITHUB_ACTIONS") == "true":
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 def ensure_installed(package_name):
     if importlib.util.find_spec(package_name) is None:
@@ -145,7 +150,21 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)  # Small learning ra
 criterion = nn.MSELoss()
 
 try:
-    _model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chess_vgg_model_final.pth')
+    _model_dir = os.path.dirname(os.path.abspath(__file__))
+    _model_candidates = [
+        'chess_vgg_model_final.pth',
+        'chess_vgg_model_final_Test.pth',
+        'chess_vgg_best_model_Test.pth',
+        'chess_vgg_best_model.pth',
+    ]
+    _model_path = None
+    for _name in _model_candidates:
+        _candidate = os.path.join(_model_dir, _name)
+        if os.path.exists(_candidate):
+            _model_path = _candidate
+            break
+    if _model_path is None:
+        raise FileNotFoundError
     checkpoint = torch.load(_model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     # Load optimizer state if available
@@ -155,7 +174,7 @@ try:
     print(f"Chess VGG model loaded successfully on {device}!")
     print("Real-time learning ENABLED - model will learn from each game")
 except FileNotFoundError:
-    print("ERROR: chess_vgg_model_final.pth not found! Please train the model first.")
+    print("ERROR: No model checkpoint found. Expected one of: chess_vgg_model_final.pth, chess_vgg_model_final_Test.pth, chess_vgg_best_model_Test.pth, chess_vgg_best_model.pth")
     sys.exit(1)
 
 
@@ -173,13 +192,14 @@ running = True
 gs = ce.gameState()
 IMAGES = {}
 moveSet = []
-auto_play = False  # Autoplay starts after first click
+auto_play = os.getenv("AUTO_PLAY", "1") == "1"
 move_delay = 0
 MOVE_INTERVAL = 50  # milliseconds between auto moves (1 second)
 game_number = 1
 move_number = 0
 game_end_timer = 0
 GAME_END_DELAY = 2000  # 2 seconds delay before restarting after game ends
+MAX_GAMES = int(os.getenv("MAX_GAMES", "100"))
 
 # Real-time learning variables
 experience_buffer = []  # Stores (fen, tensor) for each white move in current game
@@ -220,9 +240,31 @@ def drawPieces():
                 piece = gs.board[r][c]
                 screen.blit(IMAGES[piece], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE))
 
+def resolve_stockfish_path():
+    env_path = os.getenv("STOCKFISH_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(repo_root, "stockfish", "stockfish-windows-x86-64-avx2.exe"),
+        os.path.join(repo_root, "stockfish", "stockfish-ubuntu-x86-64-avx2"),
+        "/usr/games/stockfish",
+    ]
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+
+    path_candidate = shutil.which("stockfish")
+    if path_candidate:
+        return path_candidate
+
+    raise FileNotFoundError("Stockfish binary not found. Set STOCKFISH_PATH or install stockfish.")
+
 def eval_stockfish(var_fen, var_level, var_elo):
 
-    stockfish = Stockfish(path="C:/Users/anchi/GitHub/Repos/Chess_Game/stockfish/stockfish-windows-x86-64-avx2.exe")
+    stockfish = Stockfish(path=resolve_stockfish_path())
 
     {
         "Debug Log File": "",
@@ -251,7 +293,7 @@ def eval_stockfish(var_fen, var_level, var_elo):
 
 def move_stockfish(var_fen, var_level, var_elo):
 
-    stockfish = Stockfish(path="C:/Users/anchi/GitHub/Repos/Chess_Game/stockfish/stockfish-windows-x86-64-avx2.exe")
+    stockfish = Stockfish(path=resolve_stockfish_path())
 
     {
         "Debug Log File": "",
@@ -421,7 +463,7 @@ induce_randomness = 0
 first_move = True
 
 
-while running and game_number <= 1000:
+while running and game_number <= MAX_GAMES:
     screen.fill("White")
     makeSquares()
     drawPieces()

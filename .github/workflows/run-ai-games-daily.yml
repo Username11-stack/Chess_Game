@@ -1,0 +1,56 @@
+name: Run AI Games Daily
+
+on:
+  schedule:
+    # 08:00 IST = 02:30 UTC
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-ai-games:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas stockfish pygame requests torch
+
+      - name: Run AI_Games.py
+        env:
+          HEADLESS: "1"
+          AUTO_PLAY: "1"
+          MAX_GAMES: "100"
+          STOCKFISH_PATH: "/usr/games/stockfish"
+        run: python AI_Games.py
+
+      - name: Commit generated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add chess_games_final_2.csv AI_chess_games_final_2.csv || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: daily AI games dataset update"
+            git push
+          fi
