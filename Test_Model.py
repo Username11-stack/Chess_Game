@@ -3,6 +3,7 @@ import importlib.util
 import subprocess
 import sys
 import os
+from datetime import datetime, timezone
 
 def ensure_installed(package_name, import_name=None):
     """Install package if not found. 
@@ -452,6 +453,31 @@ torch.save({
     'eval_max': eval_max,
 }, model_path)
 print(f"Model saved to '{model_path}'")
+
+# Append one row per retraining run with summary metrics.
+log_path = os.path.join(os.path.dirname(__file__), 'training_retrain_log.csv')
+log_row = {
+    'run_timestamp_utc': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+    'dataset_positions': int(len(chess_df)),
+    'dataset_games': int(chess_df['Game_No'].nunique()),
+    'epochs_completed': int(len(train_losses)),
+    'final_train_loss': float(train_losses[-1]) if train_losses else None,
+    'final_test_loss': float(test_losses[-1]) if test_losses else None,
+    'final_train_mae': float(train_metrics['mae'][-1]) if train_metrics['mae'] else None,
+    'final_test_mae': float(test_metrics['mae'][-1]) if test_metrics['mae'] else None,
+    'final_train_r2': float(train_metrics['r2'][-1]) if train_metrics['r2'] else None,
+    'final_test_r2': float(test_metrics['r2'][-1]) if test_metrics['r2'] else None,
+    'best_test_loss': float(min(test_losses)) if test_losses else None,
+}
+
+if os.path.exists(log_path):
+    log_df = pd.read_csv(log_path)
+    log_df = pd.concat([log_df, pd.DataFrame([log_row])], ignore_index=True)
+else:
+    log_df = pd.DataFrame([log_row])
+
+log_df.to_csv(log_path, index=False)
+print(f"Retraining log updated at '{log_path}'")
 
 print("\nTraining completed!")
 
