@@ -48,5 +48,15 @@ jobs:
             echo "No retraining artifact changes to commit."
           else
             git commit -m "chore: retrain chess_vgg_model_test after daily AI games"
-            git push origin main
+            for attempt in 1 2 3; do
+              git pull --rebase origin main
+              if git push origin main; then
+                echo "Push succeeded on attempt $attempt"
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Push failed after 3 attempts"
+                exit 1
+              fi
+            done
           fi
