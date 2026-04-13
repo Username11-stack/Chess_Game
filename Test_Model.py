@@ -429,15 +429,6 @@ for epoch in range(num_epochs):
     if test_loss < best_val_loss:
         best_val_loss = test_loss
         patience_counter = 0
-        # Save best model
-        model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_best_model_Test.pth')
-        torch.save({
-            'epoch': epoch + 1,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'test_loss': test_loss,
-        }, model_path)
-        print(f"  ✓ Best model saved (loss: {test_loss:.4f})")
     else:
         patience_counter += 1
         if patience_counter >= patience:

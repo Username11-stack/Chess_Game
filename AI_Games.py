@@ -199,19 +199,8 @@ criterion = nn.MSELoss()
 
 try:
     _model_dir = os.path.dirname(os.path.abspath(__file__))
-    _model_candidates = [
-        'chess_vgg_model_final.pth',
-        'chess_vgg_model_final_Test.pth',
-        'chess_vgg_best_model_Test.pth',
-        'chess_vgg_best_model.pth',
-    ]
-    _model_path = None
-    for _name in _model_candidates:
-        _candidate = os.path.join(_model_dir, _name)
-        if os.path.exists(_candidate):
-            _model_path = _candidate
-            break
-    if _model_path is None:
+    _model_path = os.path.join(_model_dir, 'chess_vgg_model_final_Test.pth')
+    if not os.path.exists(_model_path):
         raise FileNotFoundError
     checkpoint = torch.load(_model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -225,7 +214,7 @@ try:
     print(f"Chess VGG model loaded successfully on {device}!")
     print("Real-time learning ENABLED - model will learn from each game")
 except FileNotFoundError:
-    print("ERROR: No model checkpoint found. Expected one of: chess_vgg_model_final.pth, chess_vgg_model_final_Test.pth, chess_vgg_best_model_Test.pth, chess_vgg_best_model.pth")
+    print("ERROR: chess_vgg_model_final_Test.pth not found.")
     sys.exit(1)
 
 

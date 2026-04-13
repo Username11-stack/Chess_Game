@@ -43,7 +43,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add chess_vgg_best_model_Test.pth chess_vgg_model_final_Test.pth training_metrics_Test.png chess_predictions_improved_Test.csv || true
+          git add chess_vgg_model_final_Test.pth training_metrics_Test.png chess_predictions_improved_Test.csv || true
           if git diff --cached --quiet; then
             echo "No retraining artifact changes to commit."
           else
