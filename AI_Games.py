@@ -9,6 +9,8 @@ import shutil
 if os.getenv("HEADLESS", "0") == "1" or os.getenv("GITHUB_ACTIONS") == "true":
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
+IS_HEADLESS = os.getenv("HEADLESS", "0") == "1" or os.getenv("GITHUB_ACTIONS") == "true"
+
 def ensure_installed(package_name):
     if importlib.util.find_spec(package_name) is None:
         print(f"'{package_name}' not found — installing...")
@@ -234,9 +236,13 @@ SQ_SIZE = HEIGHT // DIMENSION
 MAX_FPS = 15
 
 # pygame setup
-p.init()
-screen = p.display.set_mode((WIDTH, HEIGHT))
-clock = p.time.Clock()
+if not IS_HEADLESS:
+    p.init()
+    screen = p.display.set_mode((WIDTH, HEIGHT))
+    clock = p.time.Clock()
+else:
+    screen = None
+    clock = None
 running = True
 gs = ce.gameState()
 IMAGES = {}
@@ -268,6 +274,8 @@ df = pd.DataFrame(columns=['Game_No', 'FEN', 'Eval_cp', 'Eval_mate', 'stat_win',
 
 
 def load_images():
+    if IS_HEADLESS:
+        return
     pieces = ['wP', 'wR', 'wN', 'wB', 'wQ', 'wK', 'bP', 'bR', 'bN', 'bB', 'bQ', 'bK']
     for piece in pieces:
         IMAGES[piece] = p.transform.scale(p.image.load(f"Chess/Images/{piece}.png"), (SQ_SIZE, SQ_SIZE))
@@ -511,28 +519,35 @@ load_images()  # Load images once before the loop
 induce_randomness = 0
 first_move = True
 
+def current_millis():
+    if IS_HEADLESS:
+        return int(time.time() * 1000)
+    return p.time.get_ticks()
+
 
 while running and game_number <= MAX_GAMES:
-    screen.fill("White")
-    makeSquares()
-    drawPieces()
+    if not IS_HEADLESS:
+        screen.fill("White")
+        makeSquares()
+        drawPieces()
     
-    for event in p.event.get():
-        if event.type == p.QUIT:
-            running = False
-        elif event.type == p.MOUSEBUTTONDOWN:
-            if not auto_play:
-                auto_play = True
-                print("Auto-play started! Game will play itself.")
-            else:
-                auto_play = False
-                print("Auto-play paused.")
+    if not IS_HEADLESS:
+        for event in p.event.get():
+            if event.type == p.QUIT:
+                running = False
+            elif event.type == p.MOUSEBUTTONDOWN:
+                if not auto_play:
+                    auto_play = True
+                    print("Auto-play started! Game will play itself.")
+                else:
+                    auto_play = False
+                    print("Auto-play paused.")
 
 
     
     # Auto-play logic: make moves automatically
     if auto_play and not (gs.whiteWon or gs.blackWon or gs.staleMate):
-        current_time = p.time.get_ticks()
+        current_time = current_millis()
         if current_time - move_delay > MOVE_INTERVAL:
             if first_move:
                 var_level = random.randint(1, 20)
@@ -667,7 +682,6 @@ while running and game_number <= MAX_GAMES:
             
     # Check for game end
     if gs.whiteWon or gs.blackWon or gs.staleMate:
-        my_font = p.font.SysFont('Comic Sans MS', 30)
         if gs.whiteWon:
             text = 'WHITE WINS!'
             game_outcome = 'win'
@@ -677,8 +691,10 @@ while running and game_number <= MAX_GAMES:
         else:
             text = 'STALEMATE!'
             game_outcome = 'draw'
-        text_surface = my_font.render(text, False, (255, 0, 0))
-        screen.blit(text_surface, (250, 400))
+        if not IS_HEADLESS:
+            my_font = p.font.SysFont('Comic Sans MS', 30)
+            text_surface = my_font.render(text, False, (255, 0, 0))
+            screen.blit(text_surface, (250, 400))
         
         # Train model based on game outcome (only once per game)
         if game_end_timer == 0:
@@ -718,10 +734,10 @@ while running and game_number <= MAX_GAMES:
             
             # Save game data
             df.to_csv('chess_games_final_2.csv', index=False)
-            game_end_timer = p.time.get_ticks()
+            game_end_timer = current_millis()
         
         # Restart game after delay
-        if p.time.get_ticks() - game_end_timer > GAME_END_DELAY:
+        if current_millis() - game_end_timer > GAME_END_DELAY:
             print(f"\nStarting new game {game_number + 1}...")
             gs = ce.gameState()  # Reset game state
             game_number += 1
@@ -731,11 +747,13 @@ while running and game_number <= MAX_GAMES:
             game_end_timer = 0
             auto_play = True  # Continue auto-play for next game
     
-    p.display.flip()
-    clock.tick(15)  # Use MAX_FPS value for smoother animation
+    if not IS_HEADLESS:
+        p.display.flip()
+        clock.tick(15)  # Use MAX_FPS value for smoother animation
 
 
-p.quit()
+if not IS_HEADLESS:
+    p.quit()
 
 # Export final DataFrame
 print("\nExporting final DataFrame...")
