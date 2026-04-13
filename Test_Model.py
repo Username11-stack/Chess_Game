@@ -565,11 +565,6 @@ with torch.no_grad():
 chess_df_with_predictions['Predicted_Eval_cp'] = predictions
 print(f"Predictions completed for all {len(chess_df)} positions!")
 
-# Save the dataframe with predictions
-output_file = 'chess_predictions_improved_Test.csv'
-chess_df_with_predictions.to_csv(output_file, index=False)
-print(f"Dataframe with predictions saved to '{output_file}'")
-
 # Show comprehensive statistics
 print("\n" + "=" * 80)
 print("Prediction Statistics:")

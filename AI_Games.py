@@ -760,6 +760,5 @@ if not IS_HEADLESS:
 # Export final DataFrame
 print("\nExporting final DataFrame...")
 df.to_csv(CSV_PATH, index=False)
-df.to_csv('AI_chess_games_final_2.csv', index=False)
 print(f"Data exported successfully! Total rows: {len(df)}")
 print(df.head(20))
