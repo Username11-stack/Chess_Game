@@ -2,6 +2,7 @@
 import importlib.util
 import subprocess
 import sys
+import os
 
 def ensure_installed(package_name, import_name=None):
     """Install package if not found. 
@@ -19,6 +20,10 @@ ensure_installed('tabulate')
 ensure_installed('scikit-learn', 'sklearn')
 ensure_installed('matplotlib')
 ensure_installed('pandas')
+
+if os.getenv("HEADLESS", "0") == "1" or os.getenv("GITHUB_ACTIONS") == "true":
+    import matplotlib
+    matplotlib.use('Agg')
 
 import pandas as pd
 import torch
@@ -38,7 +43,8 @@ np.random.seed(SEED)
 
 
 # Load data
-df = pd.read_csv('C:/Users/anchi/GitHub/Repos/Chess_Game/chess_games_final.csv')
+data_path = os.path.join(os.path.dirname(__file__), 'chess_games_final_2.csv')
+df = pd.read_csv(data_path)
 chess_df = df[['Game_No', 'move_no', 'FEN', 'Eval_cp']]
 chess_df = chess_df[chess_df['Eval_cp'].notnull()].reset_index(drop=True)
 print(f"Dataset size: {len(chess_df)} positions")
@@ -424,7 +430,6 @@ for epoch in range(num_epochs):
         best_val_loss = test_loss
         patience_counter = 0
         # Save best model
-        import os
         model_path = os.path.join(os.path.dirname(__file__), 'chess_vgg_best_model_Test.pth')
         torch.save({
             'epoch': epoch + 1,
@@ -494,7 +499,8 @@ axes[2].grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig('training_metrics_Test.png', dpi=300)
 print("Training metrics plot saved as 'training_metrics_Test.png'")
-plt.show()
+if not (os.getenv("HEADLESS", "0") == "1" or os.getenv("GITHUB_ACTIONS") == "true"):
+    plt.show()
 
 # Test predictions with denormalization
 model.eval()
