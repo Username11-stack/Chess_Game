@@ -250,7 +250,6 @@ moveSet = []
 auto_play = os.getenv("AUTO_PLAY", "1") == "1"
 move_delay = 0
 MOVE_INTERVAL = 50  # milliseconds between auto moves (1 second)
-game_number = 1
 move_number = 0
 game_end_timer = 0
 GAME_END_DELAY = 2000  # 2 seconds delay before restarting after game ends
@@ -267,8 +266,22 @@ training_stats = {
     'avg_loss': []
 }
 
-df = pd.DataFrame(columns=['Game_No', 'FEN', 'Eval_cp', 'Eval_mate', 'stat_win', 'stat_draw', 'stat_loss', 'white_won', 
-                           'black_won', 'stalemate', 'move_no'])
+CSV_PATH = 'chess_games_final_2.csv'
+CSV_COLUMNS = ['Game_No', 'FEN', 'Eval_cp', 'Eval_mate', 'stat_win', 'stat_draw', 'stat_loss', 'white_won',
+               'black_won', 'stalemate', 'move_no']
+
+if os.path.exists(CSV_PATH):
+    df = pd.read_csv(CSV_PATH)
+else:
+    df = pd.DataFrame(columns=CSV_COLUMNS)
+
+if not df.empty and 'Game_No' in df.columns and pd.notna(df['Game_No'].max()):
+    game_number = int(df['Game_No'].max()) + 1
+else:
+    game_number = 1
+
+end_game_number = game_number + MAX_GAMES - 1
+print(f"Starting from game {game_number}. This run will finish at game {end_game_number}.")
 
 
 
@@ -525,7 +538,7 @@ def current_millis():
     return p.time.get_ticks()
 
 
-while running and game_number <= MAX_GAMES:
+while running and game_number <= end_game_number:
     if not IS_HEADLESS:
         screen.fill("White")
         makeSquares()
@@ -733,7 +746,7 @@ while running and game_number <= MAX_GAMES:
             print(f"{'='*60}\n")
             
             # Save game data
-            df.to_csv('chess_games_final_2.csv', index=False)
+            df.to_csv(CSV_PATH, index=False)
             game_end_timer = current_millis()
         
         # Restart game after delay
@@ -757,6 +770,7 @@ if not IS_HEADLESS:
 
 # Export final DataFrame
 print("\nExporting final DataFrame...")
+df.to_csv(CSV_PATH, index=False)
 df.to_csv('AI_chess_games_final_2.csv', index=False)
 print(f"Data exported successfully! Total rows: {len(df)}")
 print(df.head(20))
